@@ -63,3 +63,5 @@ plt.ylabel("Voyage Count")
 plt.xticks(rotation=45, ha="right")
 plt.tight_layout()
 plt.show()
+
+# Do it by ship and nationality 
