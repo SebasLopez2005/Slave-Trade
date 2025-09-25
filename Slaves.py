@@ -64,4 +64,6 @@ plt.xticks(rotation=45, ha="right")
 plt.tight_layout()
 plt.show()
 
+voyage_ship__imputed_nationality__name
+
 # Do it by ship and nationality 

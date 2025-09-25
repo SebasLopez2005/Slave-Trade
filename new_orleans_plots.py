@@ -1,6 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 import matplotlib.ticker as mticker
@@ -12,78 +13,443 @@ import matplotlib.colors as mcolors
 df = pd.read_csv("data/new_orleans_combined.csv")
 df.dropna()
 
-# ---- Timeline: Voyages per year ----
+# ---------------------- LINE PLOT ---------------------------
+# ---- Timeline: Voyages Arriving in New Orleans per year ----
 year_col = "voyage_dates__imp_arrival_at_port_of_dis_sparsedate__year"
 voyage_per_year = df.groupby(year_col).size().reset_index(name='voyage_count')
 
-plt.figure(figsize=(10,6))
+# Create color mapping based on voyage counts
+voyage_counts = voyage_per_year['voyage_count'].values
+norm = mcolors.Normalize(vmin=voyage_counts.min(), vmax=voyage_counts.max())
+colors = cm.get_cmap('Reds')(norm(voyage_counts))
+
+plt.figure(figsize=(12, 8))
+
+# Create scatter plot with color-coded points
+scatter = plt.scatter(voyage_per_year[year_col], 
+                     voyage_per_year['voyage_count'],
+                     c=voyage_counts,
+                     cmap='Reds',
+                     s=100,  # Size of markers
+                     edgecolors='darkred',
+                     linewidth=1.5,
+                     alpha=0.8)
+
+# Add connecting line
 plt.plot(voyage_per_year[year_col], 
          voyage_per_year['voyage_count'], 
-         color='red', 
-         markerfacecolor='white', 
-         markeredgecolor='red', 
-         marker='o', 
-         linewidth=2
-)
-plt.title("Number of Voyages to New Orleans per Year")
-plt.xlabel("Year")
-plt.ylabel("Voyage Count")
-plt.grid(True)
+         color='darkred', 
+         linewidth=2,
+         alpha=0.6,
+         zorder=1)  # Put line behind markers
+
+# Add colorbar
+cbar = plt.colorbar(scatter, shrink=0.8)
+cbar.set_label('Number of Voyages', rotation=270, labelpad=20, fontsize=12)
+cbar.ax.tick_params(labelsize=10)
+
+# Enhance formatting
+plt.title("Timeline: Slave Trade Voyages to New Orleans\n(Color intensity reflects voyage frequency)", 
+          fontsize=16, fontweight='bold', pad=20)
+plt.xlabel("Year", fontsize=12, fontweight='bold')
+plt.ylabel("Number of Voyages", fontsize=12, fontweight='bold')
+
+# Add grid with better styling
+plt.grid(True, alpha=0.3, linestyle='--')
+
+# Add statistical annotations
+max_voyages = voyage_counts.max()
+max_year = voyage_per_year.loc[voyage_per_year['voyage_count'].idxmax(), year_col]
+avg_voyages = voyage_counts.mean()
+
+plt.axhline(y=avg_voyages, color='blue', linestyle='--', alpha=0.7, 
+           label=f'Average: {avg_voyages:.1f} voyages/year')
+plt.axhline(y=max_voyages, color='red', linestyle=':', alpha=0.7,
+           label=f'Peak: {max_voyages} voyages in {int(max_year)}')
+
+plt.legend(loc='upper left', framealpha=0.9)
+
+# Improve layout
 plt.tight_layout()
 plt.show()
 
-# ---- Histogram: Number of enslaved people disembarked per Year ----
+# ---------------------- STACKED BAR CHART ----------------------
+# ------- Number of enslaved people disembarked per Year --------
 year_col = "voyage_dates__imp_arrival_at_port_of_dis_sparsedate__year"
 disembarked_col = "voyage_slaves_numbers__imp_total_num_slaves_disembarked"
+source_col = "dataset_source"  
 
 # Retrieve a group by year and sum the disembarked enslaved people
 disembarked_per_year = (
-    df.groupby(year_col, as_index=False)[disembarked_col]
+    df.groupby([year_col, source_col], as_index=False)[disembarked_col]
         .sum()
         .rename(columns={disembarked_col: 'disembarked_total'})
         .sort_values(by=year_col)
 )
 
-# Create the bar plot
-fig, ax = plt.subplots(figsize=(12,6))
+# Pivot to get data sources as columns
+pivot_data = disembarked_per_year.pivot(
+    index=year_col, 
+    columns=source_col, 
+    values='disembarked_total'
+).fillna(0)
 
-# Color mapping based on the number of disembarked enslaved people
-heights = disembarked_per_year["disembarked_total"].to_numpy()
-norm = mcolors.Normalize(vmin=heights.min(), vmax=heights.max())
-colors = cm.get_cmap("rocket")(norm(heights))
+# Create the stacked bar plot
+fig, ax = plt.subplots(figsize=(14, 8))
 
-ax.bar(
-    disembarked_per_year[year_col],
-    disembarked_per_year["disembarked_total"],
-    color=colors,
-    edgecolor='black'
-)
-ax.set_title("Total Number of Enslaved People Disembarked in New Orleans per Year")
+# Get unique data sources and assign colors
+data_sources = pivot_data.columns.tolist()
+colors = cm.get_cmap("berlin")(np.linspace(0, 1, len(data_sources)))
+
+# Create stacked bars 
+bottom = np.zeros(len(pivot_data))
+bars = []
+
+for i, source in enumerate(data_sources):
+    bar = ax.bar(
+        pivot_data.index,
+        pivot_data[source],
+        bottom=bottom,
+        label=source,
+        color=colors[i],
+        edgecolor='black',
+        linewidth=0.5
+    )
+    bars.append(bar)
+    bottom += pivot_data[source]
+
+# Plot reference lines 
+total_per_year = pivot_data.sum(axis=1)
+overall_average = total_per_year.mean()
+max_year = total_per_year.idxmax()
+max_total = total_per_year.max()
+ax.axhline(overall_average, 
+           color='crimson', 
+           linestyle='--', 
+           alpha=0.8,
+           label=f'Average: {overall_average:,.0f} enslaved per year')
+ax.axhline(max_total, 
+           color='turquoise', 
+           linestyle='--', 
+           alpha=0.8,
+           label=f'Maximum: {max_total:,.0f} enslaved in {int(max_year)}')
+
+# Formatting 
+ax.set_title("Number of Enslaved People Disembarked in New Orleans per Year by Route", fontsize=16, fontweight='bold', pad=20)
 ax.set_xlabel("Year")
 ax.set_ylabel("Number of Enslaved People Disembarked")
 ax.grid(axis="y", alpha=0.3)
-ax.axhline(disembarked_per_year["disembarked_total"].mean(), 
-           color='red', 
-           linestyle='--', 
-           label=f'Average: {disembarked_per_year["disembarked_total"].mean():,.0f} enslaved per year')
-ax.axhline(disembarked_per_year["disembarked_total"].max(), 
-           color='green', 
-           linestyle=':', 
-           label=f'Maximum: {disembarked_per_year["disembarked_total"].max():,.0f} enslaved in {disembarked_per_year[year_col][disembarked_per_year["disembarked_total"].idxmax()]}')
-ax.legend(loc="upper right")
+ax.set_ylim(0, max_total * 1.1)  # Set y-max to 110% of the maximum value
+
+# Create custom legend comnbining data sources and reference lines 
+source_patches = [Patch(color=colors[i], label=source) 
+                  for i, source in enumerate(data_sources)]
+reference_lines = [
+    Line2D([0], [0], color='red', linestyle='--', alpha=0.8, label=f'Average: {overall_average:,.0f} per year'),
+    Line2D([0], [0], color='blue', linestyle='--', alpha=0.8, label=f'Maximum: {max_total:,.0f} in {int(max_year)}')
+]
+ax.legend(handles=source_patches + reference_lines, 
+          loc='upper right',
+          bbox_to_anchor=(1.15, 1))
 plt.xticks(rotation=45)
 plt.tight_layout()
 plt.show()
 
-# Plot for where they embarked from 
+# ---------------------- STACKED BAR CHART ----------------------
+# ------- Number of enslaved people embarked per Year -----------
+year_col = "voyage_dates__imp_arrival_at_port_of_dis_sparsedate__year"
+embarked_col = "voyage_slaves_numbers__imp_total_num_slaves_embarked"
+source_col = "dataset_source"  
 
-# Plot of embarked, disembakred and number of dead
+# Retrieve a group by year and sum the embarked enslaved people
+embarked_per_year = (
+    df.groupby([year_col, source_col], as_index=False)[embarked_col]
+        .sum()
+        .rename(columns={embarked_col: 'embarked_total'})
+        .sort_values(by=year_col)
+)
 
-# Plot of voyages that got captured or shipwrecked 
+# Pivot to get data sources as columns
+pivot_data_embarked = embarked_per_year.pivot(  # Changed variable name to avoid conflicts
+    index=year_col, 
+    columns=source_col, 
+    values='embarked_total'
+).fillna(0)
 
-# Voyage lengths by dataset source
+# Create the stacked bar plot
+fig, ax = plt.subplots(figsize=(14, 8))
 
-# Plot of where the ships originated from 
+# Get unique data sources and assign colors
+data_sources = pivot_data_embarked.columns.tolist()
+colors = cm.get_cmap("berlin")(np.linspace(0, 1, len(data_sources)))  # Changed colormap to differentiate from disembarked
 
-# Plot of percentage of children, females, and males 
+# Create stacked bars 
+bottom = np.zeros(len(pivot_data_embarked))
+bars = []
 
+for i, source in enumerate(data_sources):
+    bar = ax.bar(
+        pivot_data_embarked.index,
+        pivot_data_embarked[source],
+        bottom=bottom,
+        label=source,
+        color=colors[i],
+        edgecolor='black',
+        linewidth=0.5
+    )
+    bars.append(bar)
+    bottom += pivot_data_embarked[source]
+
+# Plot reference lines 
+total_per_year = pivot_data_embarked.sum(axis=1)
+overall_average = total_per_year.mean()
+max_year = total_per_year.idxmax()
+max_total = total_per_year.max()
+ax.axhline(overall_average, 
+           color='crimson', 
+           linestyle='--', 
+           alpha=0.8,
+           label=f'Average: {overall_average:,.0f} enslaved per year')
+ax.axhline(max_total, 
+           color='turquoise', 
+           linestyle='--', 
+           alpha=0.8,
+           label=f'Maximum: {max_total:,.0f} enslaved in {int(max_year)}')
+
+# Formatting 
+ax.set_title("Number of Enslaved People Embarked for New Orleans per Year by Data Source", fontsize=16, fontweight='bold', pad=20)
+ax.set_xlabel("Year")
+ax.set_ylabel("Number of Enslaved People Embarked")
+ax.grid(axis="y", alpha=0.3)
+ax.set_ylim(0, max_total * 1.1)  # Set y-max to 110% of the maximum value
+
+# Create custom legend combining data sources and reference lines
+source_patches = [Patch(color=colors[i], label=source)
+                  for i, source in enumerate(data_sources)]
+reference_lines = [
+    Line2D([0], [0], color='crimson', linestyle='--', alpha=0.8, label=f'Average: {overall_average:,.0f} per year'),  # Fixed color
+    Line2D([0], [0], color='turquoise', linestyle='--', alpha=0.8, label=f'Maximum: {max_total:,.0f} in {int(max_year)}')  # Fixed color
+]
+ax.legend(handles=source_patches + reference_lines, 
+          loc='upper right',
+          bbox_to_anchor=(1.15, 1))
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.show()
+
+# ---------------------- BAR CHART --------------------------
+# --- Top 10 Enslavers by Number of Voyages to New Orleans ---
+enslaver_col = "enslavers"
+main_enslaver_col = "main_enslaver"
+
+# Extract captain's name if present
+df[main_enslaver_col] = df[enslaver_col].str.extract(r'[^:]*:\s*([^|]+)', expand=False).str.strip()
+df[main_enslaver_col] = df[main_enslaver_col].fillna('Non-Specified')  # Use fillna() instead of replace('')
+df[main_enslaver_col] = df[main_enslaver_col].str.strip()
+
+# Count voyages per enslaver
+enslaver_counts = df[main_enslaver_col].value_counts()
+top10 = enslaver_counts.nlargest(10)
+
+# Create a new column that replaces non-top10 enslavers with "Others"
+df["enslaver_grouped"] = df[main_enslaver_col].where(df[main_enslaver_col].isin(top10.index), "Others")
+
+# Count again (top 10 + Others)
+enslaver_grouped_counts = df["enslaver_grouped"].value_counts()
+
+# Begin plotting - CORRECTED: use plt.subplots() not plt.plot()
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Get unique names and assign colors
+enslaver_names = enslaver_grouped_counts.index.tolist()
+colors = cm.get_cmap("rocket")(np.linspace(0, 1, len(enslaver_names)))
+
+# Plot
+ax.bar(
+    enslaver_grouped_counts.index,
+    enslaver_grouped_counts.values,
+    color=colors,
+    edgecolor='black',
+    linewidth=0.5
+)
+ax.set_title("Top 10 Enslavers by Number of Voyages to New Orleans", fontsize=16, fontweight='bold', pad=20)
+ax.set_xlabel("Enslaver")
+ax.set_ylabel("Voyage Count")
+ax.set_yscale('log')
+ax.set_xticklabels(enslaver_grouped_counts.index, rotation=45, ha="right")
+ax.grid(axis="y", alpha=0.3)
+ax.axhline(enslaver_grouped_counts.mean(), 
+                color='crimson',
+                linestyle='--',
+                alpha=0.8,
+                label=f'Average: {enslaver_grouped_counts.mean():.1f} voyages'
+    )
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+# --- Top Ships Nation by Number of Voyages to New Orleans ---
+ship_col = "voyage_ship__imputed_nationality__name"
+
+# Replace NaN, empty strings, 0 values and Unknown with "Non-Specified"
+df[ship_col] = df[ship_col].replace(['', '0', 0, 'Unknown'], 'Non-Specified')
+df[ship_col] = df[ship_col].fillna('Non-Specified')
+ship_counts = df[ship_col].value_counts()
+top10_ships = ship_counts.nlargest(10)
+ship_grouped_counts = df[ship_col].where(df[ship_col].isin(top10_ships.index), "Others").value_counts()
+
+# Begin plotting - CORRECTED: use plt.subplots() and create new ax
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Define colors for ships
+ship_names = ship_grouped_counts.index.tolist()
+colors = cm.get_cmap("viridis")(np.linspace(0, 1, len(ship_names)))
+
+# Plot - CORRECTED: ax.bar() returns bars, not ax
+bars = ax.bar(
+    ship_grouped_counts.index,
+    ship_grouped_counts.values,
+    color=colors,
+    edgecolor='black',
+    linewidth=0.5
+)
+ax.set_title("Top Ship Nationalities by Number of Voyages to New Orleans", fontsize=16, fontweight='bold', pad=20)
+ax.set_xlabel("Ship Nationality")
+ax.set_ylabel("Voyage Count")
+ax.set_xticklabels(ship_grouped_counts.index, rotation=45, ha="right")
+ax.grid(axis="y", alpha=0.3)
+ax.axhline(ship_grouped_counts.mean(),
+                color='crimson',
+                linestyle='--',
+                alpha=0.8,
+                label=f'Average: {ship_grouped_counts.mean():.1f} voyages'
+    )
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+# ---------------------- PIE CHART --------------------------
+# --- Demographics: Children, Females, and Males among Enslaved People ---
+
+# Define the relevant columns
+male_col = "voyage_slaves_numbers__percentage_male"
+female_col = "voyage_slaves_numbers__percentage_female" 
+child_col = "voyage_slaves_numbers__percentage_child"
+
+# Calculate weighted averages based on the number of people disembarked
+# This gives us a more accurate representation than simple column averages
+disembarked_col = "voyage_slaves_numbers__imp_total_num_slaves_disembarked"
+
+# Filter out rows with missing demographic data or zero disembarked
+demographic_data = df.dropna(subset=[male_col, female_col, child_col, disembarked_col])
+demographic_data = demographic_data[demographic_data[disembarked_col] > 0]
+
+# Calculate weighted averages
+total_disembarked = demographic_data[disembarked_col].sum()
+
+weighted_male = (demographic_data[male_col] * demographic_data[disembarked_col]).sum() / total_disembarked
+weighted_female = (demographic_data[female_col] * demographic_data[disembarked_col]).sum() / total_disembarked
+weighted_child = (demographic_data[child_col] * demographic_data[disembarked_col]).sum() / total_disembarked
+
+# Create the pie chart
+fig, ax = plt.subplots(figsize=(10, 8))
+
+# Data for pie chart
+labels = ['Males', 'Females', 'Children']
+sizes = [weighted_male, weighted_female, weighted_child]
+colors = ['steelblue', 'lightcoral', 'gold']
+explode = (0.05, 0.05, 0.1)  # Slightly separate the children slice
+
+# Create pie chart
+wedges, texts, autotexts = ax.pie(sizes, 
+                                  labels=labels, 
+                                  colors=colors, 
+                                  explode=explode,
+                                  autopct='%1.1f%%',
+                                  startangle=90,
+                                  textprops={'fontsize': 12})
+
+# Enhance the appearance
+for autotext in autotexts:
+    autotext.set_color('white')
+    autotext.set_fontweight('bold')
+
+ax.set_title('Demographics of Enslaved People\nDisembarked in New Orleans', 
+             fontsize=16, fontweight='bold', pad=20)
+
+# Add a text box with summary statistics
+textstr = f'''Total Records: {len(demographic_data):,}
+Total Enslaved: {total_disembarked:,.0f}
+Average per Voyage: {total_disembarked/len(demographic_data):,.0f}'''
+
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
+        verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
+
+# --- Voyage Outcomes: Captured, Shipwrecked, Completed, etc. ---
+outcome_col = "voyage_outcome__particular_outcome__name"
+
+# Replace NaN, empty strings, and Unknown with "Unknown"
+df[outcome_col] = df[outcome_col].replace(['', 'Unknown'], 'Unknown')
+df[outcome_col] = df[outcome_col].fillna('Unknown')
+outcome_data = df.copy()
+outcome_counts = df[outcome_col].value_counts()
+
+# Create the pie chart
+fig, ax = plt.subplots(figsize=(16, 8))
+
+# Data for pie chart
+labels = outcome_counts.index.tolist()
+sizes = outcome_counts.values
+
+# Define colors for different outcomes - match number of categories
+num_categories = len(labels)
+colors = cm.get_cmap('Set3')(np.linspace(0, 1, num_categories))
+
+# Create explode tuple to match number of categories
+explode = tuple(0.1 if i > 0 else 0 for i in range(num_categories))
+
+# Create pie chart without labels on slices
+wedges, texts, autotexts = ax.pie(sizes, 
+                                  labels=None,  # Remove labels from slices
+                                  colors=colors, 
+                                  explode=explode,
+                                  autopct='%1.1f%%',
+                                  startangle=90,
+                                  textprops={'fontsize': 12})
+                                  # Removed invalid 'location' parameter
+
+# Enhance the appearance of percentage text
+for autotext in autotexts:
+    autotext.set_color('white')
+    autotext.set_fontweight('bold')
+
+# Create legend
+ax.legend(wedges, labels, 
+          title="Voyage Outcomes",
+          loc="center left",
+          bbox_to_anchor=(1, 0, 0.5, 1))
+
+ax.set_title('Voyage Outcomes: Slave Trade to New Orleans', 
+             fontsize=16, fontweight='bold', pad=20)
+
+# Add a text box with summary statistics
+total_voyages = len(outcome_data)
+completed_successfully = outcome_counts.iloc[0]  # First item (highest count)
+captured_unknown = total_voyages - completed_successfully
+success_rate = (completed_successfully / total_voyages) * 100
+
+textstr = f'''Total Voyages: {total_voyages:,}
+Completed Successfully: {completed_successfully:,}
+Captured/Unknown: {captured_unknown:,}
+Success Rate: {success_rate:.1f}%'''
+
+props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
+ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
+        verticalalignment='top', bbox=props)
+
+plt.tight_layout()
+plt.show()
