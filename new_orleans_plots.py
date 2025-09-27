@@ -453,3 +453,113 @@ ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
 
 plt.tight_layout()
 plt.show()
+
+# ---------------------- BAR CHART --------------------------
+# --- Top Points of Embarkation for Slave Voyages to New Orleans ---
+embarkation_col = "voyage_itinerary__imp_principal_place_of_slave_purchase__name"
+
+# Replace NaN, empty strings with "Unknown"
+df[embarkation_col] = df[embarkation_col].replace(['', 'Unknown'], 'Unknown')
+df[embarkation_col] = df[embarkation_col].fillna('Unknown')
+
+# Count voyages per embarkation point
+embarkation_counts = df[embarkation_col].value_counts()
+top15_embarkation = embarkation_counts.nlargest(15)
+
+# Create a new column that replaces non-top15 with "Others"
+df["embarkation_grouped"] = df[embarkation_col].where(df[embarkation_col].isin(top15_embarkation.index), "Others")
+embarkation_grouped_counts = df["embarkation_grouped"].value_counts()
+
+# Create the bar plot
+fig, ax = plt.subplots(figsize=(14, 8))
+
+# Get unique names and assign colors
+embarkation_names = embarkation_grouped_counts.index.tolist()
+colors = cm.get_cmap("plasma")(np.linspace(0, 1, len(embarkation_names)))
+
+# Plot
+bars = ax.bar(
+    embarkation_grouped_counts.index,
+    embarkation_grouped_counts.values,
+    color=colors,
+    edgecolor='black',
+    linewidth=0.5
+)
+
+ax.set_title("Top 15 Points of Embarkation for Slave Voyages to New Orleans", 
+             fontsize=16, fontweight='bold', pad=20)
+ax.set_xlabel("Embarkation Point")
+ax.set_ylabel("Number of Voyages")
+ax.set_xticklabels(embarkation_grouped_counts.index, rotation=45, ha="right")
+ax.grid(axis="y", alpha=0.3)
+
+# Add average line
+avg_embarkation = embarkation_grouped_counts.mean()
+max_embarkation = embarkation_grouped_counts.max()
+ax.axhline(avg_embarkation, 
+           color='crimson',
+           linestyle='--',
+           alpha=0.8,
+           label=f'Average: {avg_embarkation:.1f} voyages')
+ax.axhline(max_embarkation, 
+           color='orange',
+           linestyle='--',
+           alpha=0.8,
+           label=f'Max: {max_embarkation:.1f} voyages for {embarkation_grouped_counts.idxmax()}')
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+# ---------------------- MORTALITY ANALYSIS ----------------------
+# --- Mortality Rate Over Time: (Embarked - Disembarked) / Embarked * 100 ---
+
+# Define columns
+embarked_col = "voyage_slaves_numbers__imp_total_num_slaves_embarked"
+disembarked_col = "voyage_slaves_numbers__imp_total_num_slaves_disembarked"
+year_col = "voyage_dates__imp_arrival_at_port_of_dis_sparsedate__year"
+
+# Filter data with both embarked and disembarked numbers
+mortality_data = df.dropna(subset=[embarked_col, disembarked_col])
+mortality_data = mortality_data[(mortality_data[embarked_col] > 0) & (mortality_data[disembarked_col] >= 0)]
+
+# Calculate mortality rate: (embarked - disembarked) / embarked * 100
+mortality_data['mortality_count'] = mortality_data[embarked_col] - mortality_data[disembarked_col]
+mortality_data['mortality_rate'] = (mortality_data['mortality_count'] / mortality_data[embarked_col]) * 100
+
+# Group by year to see trends
+mortality_by_year = mortality_data.groupby(year_col).agg({
+    'mortality_rate': 'mean',
+    embarked_col: 'sum',
+    disembarked_col: 'sum',
+    'mortality_count': 'sum'
+}).reset_index()
+
+# Recalculate overall mortality rate by year
+mortality_by_year['overall_mortality_rate'] = (mortality_by_year['mortality_count'] / mortality_by_year[embarked_col]) * 100
+
+# Create single plot figure
+fig, ax = plt.subplots(figsize=(14, 8))
+
+# Mortality rate over time (line plot)
+ax.plot(mortality_by_year[year_col], mortality_by_year['overall_mortality_rate'], 
+        marker='o', linewidth=2, markersize=6, color='darkred', alpha=0.8)
+ax.fill_between(mortality_by_year[year_col], mortality_by_year['overall_mortality_rate'], 
+                alpha=0.3, color='red')
+
+ax.set_title('Mortality Rate in Slave Voyages to New Orleans Over Time', 
+             fontsize=16, fontweight='bold', pad=20)
+ax.set_xlabel('Year')
+ax.set_ylabel('Mortality Rate (%)')
+ax.grid(True, alpha=0.3)
+
+# Add average mortality line
+avg_mortality = mortality_by_year['overall_mortality_rate'].mean()
+max_mortality = mortality_by_year['overall_mortality_rate'].max()
+ax.axhline(avg_mortality, color='blue', linestyle='--', alpha=0.7,
+           label=f'Average Mortality: {avg_mortality:.1f}%')
+ax.axhline(max_mortality, color='red', linestyle='--', alpha=0.7,   
+           label=f'Max Mortality: {max_mortality:.1f}% in {int(mortality_by_year.loc[mortality_by_year["overall_mortality_rate"].idxmax(), year_col])}')
+ax.legend()
+
+plt.tight_layout()
+plt.show()
